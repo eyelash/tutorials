@@ -16,6 +16,14 @@ static struct wl_shell *shell = NULL;
 static EGLDisplay egl_display;
 static char running = 1;
 
+struct window {
+	EGLContext egl_context;
+	struct wl_surface *surface;
+	struct wl_shell_surface *shell_surface;
+	struct wl_egl_window *egl_window;
+	EGLSurface egl_surface;
+};
+
 // listeners
 static void registry_add_object (void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version) {
 	if (!strcmp(interface,"wl_compositor")) {
@@ -34,27 +42,15 @@ static void shell_surface_ping (void *data, struct wl_shell_surface *shell_surfa
 	wl_shell_surface_pong (shell_surface, serial);
 }
 static void shell_surface_configure (void *data, struct wl_shell_surface *shell_surface, uint32_t edges, int32_t width, int32_t height) {
-	printf ("shell_surface_configure\n");
+	struct window *window = data;
+	wl_egl_window_resize (window->egl_window, width, height, 0, 0);
 }
 static void shell_surface_popup_done (void *data, struct wl_shell_surface *shell_surface) {
 	
 }
 static struct wl_shell_surface_listener shell_surface_listener = {&shell_surface_ping, &shell_surface_configure, &shell_surface_popup_done};
 
-// window
-struct window {
-	int32_t width, height;
-	EGLContext egl_context;
-	struct wl_surface *surface;
-	struct wl_shell_surface *shell_surface;
-	struct wl_egl_window *egl_window;
-	EGLSurface egl_surface;
-};
-static struct window create_window (int32_t width, int32_t height) {
-	struct window window;
-	window.width = width;
-	window.height = height;
-	
+static void create_window (struct window *window, int32_t width, int32_t height) {
 	eglBindAPI (EGL_OPENGL_API);
 	EGLint attributes[] = {
 		EGL_RED_SIZE, 8,
@@ -64,17 +60,15 @@ static struct window create_window (int32_t width, int32_t height) {
 	EGLConfig config;
 	EGLint num_config;
 	eglChooseConfig (egl_display, attributes, &config, 1, &num_config);
-	window.egl_context = eglCreateContext (egl_display, config, EGL_NO_CONTEXT, NULL);
+	window->egl_context = eglCreateContext (egl_display, config, EGL_NO_CONTEXT, NULL);
 	
-	window.surface = wl_compositor_create_surface (compositor);
-	window.shell_surface = wl_shell_get_shell_surface (shell, window.surface);
-	wl_shell_surface_add_listener (window.shell_surface, &shell_surface_listener, NULL);
-	wl_shell_surface_set_toplevel (window.shell_surface);
-	window.egl_window = wl_egl_window_create (window.surface, width, height);
-	window.egl_surface = eglCreateWindowSurface (egl_display, config, window.egl_window, NULL);
-	eglMakeCurrent (egl_display, window.egl_surface, window.egl_surface, window.egl_context);
-	
-	return window;
+	window->surface = wl_compositor_create_surface (compositor);
+	window->shell_surface = wl_shell_get_shell_surface (shell, window->surface);
+	wl_shell_surface_add_listener (window->shell_surface, &shell_surface_listener, window);
+	wl_shell_surface_set_toplevel (window->shell_surface);
+	window->egl_window = wl_egl_window_create (window->surface, width, height);
+	window->egl_surface = eglCreateWindowSurface (egl_display, config, window->egl_window, NULL);
+	eglMakeCurrent (egl_display, window->egl_surface, window->egl_surface, window->egl_context);
 }
 static void delete_window (struct window *window) {
 	eglDestroySurface (egl_display, window->egl_surface);
@@ -97,7 +91,8 @@ int main () {
 	egl_display = eglGetDisplay (display);
 	eglInitialize (egl_display, NULL, NULL);
 	
-	struct window window = create_window (WIDTH, HEIGHT);
+	struct window window;
+	create_window (&window, WIDTH, HEIGHT);
 	
 	while (running) {
 		wl_display_dispatch_pending (display);
