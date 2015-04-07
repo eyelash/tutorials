@@ -4,8 +4,8 @@
 #include <wayland-egl.h>
 #include <EGL/egl.h>
 #include <GL/gl.h>
-#include <stdio.h>
 #include <string.h>
+#include <stdio.h>
 
 #define WIDTH 256
 #define HEIGHT 256
@@ -34,7 +34,7 @@ static void registry_add_object (void *data, struct wl_registry *registry, uint3
 	}
 }
 static void registry_remove_object (void *data, struct wl_registry *registry, uint32_t name) {
-	printf ("registry_remove_object\n");
+	
 }
 static struct wl_registry_listener registry_listener = {&registry_add_object, &registry_remove_object};
 
@@ -88,6 +88,7 @@ int main () {
 	struct wl_registry *registry = wl_display_get_registry (display);
 	wl_registry_add_listener (registry, &registry_listener, NULL);
 	wl_display_dispatch (display);
+	
 	egl_display = eglGetDisplay (display);
 	eglInitialize (egl_display, NULL, NULL);
 	
