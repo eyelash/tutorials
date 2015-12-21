@@ -1,6 +1,13 @@
 #include "backend.h"
+#include <wayland-server.h>
 #include <X11/Xlib.h>
+#include <linux/input.h>
 #include <EGL/egl.h>
+#include <X11/Xlib-xcb.h>
+#include <xkbcommon/xkbcommon-x11.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
@@ -100,13 +107,19 @@ void backend_dispatch_nonblocking (void) {
 			redraw_requested = 1;
 		}
 		else if (event.type == MotionNotify) {
-			callbacks.mouse_event (event.xbutton.x, event.xbutton.y, 0);
+			callbacks.mouse_motion (event.xbutton.x, event.xbutton.y);
 		}
 		else if (event.type == ButtonPress) {
-			callbacks.mouse_event (event.xbutton.x, event.xbutton.y, 1);
+			callbacks.mouse_button (BTN_LEFT, WL_POINTER_BUTTON_STATE_PRESSED);
 		}
 		else if (event.type == ButtonRelease) {
-			callbacks.mouse_event (event.xbutton.x, event.xbutton.y, 2);
+			callbacks.mouse_button (BTN_LEFT, WL_POINTER_BUTTON_STATE_RELEASED);
+		}
+		else if (event.type == KeyPress) {
+			callbacks.keyboard (event.xkey.keycode - 8, WL_KEYBOARD_KEY_STATE_PRESSED);
+		}
+		else if (event.type == KeyRelease) {
+			callbacks.keyboard (event.xkey.keycode - 8, WL_KEYBOARD_KEY_STATE_RELEASED);
 		}
 	}
 	if (redraw_requested) callbacks.draw ();
@@ -116,6 +129,23 @@ void backend_dispatch_nonblocking (void) {
 void backend_request_redraw (void) {
 	if (redraw_requested == -1) callbacks.draw ();
 	else redraw_requested = 1;
+}
+
+void backend_get_keymap (int *fd, int *size) {
+	struct xkb_context *context = xkb_context_new (XKB_CONTEXT_NO_FLAGS);
+	xcb_connection_t *connection = XGetXCBConnection (x_display);
+	int32_t device_id = xkb_x11_get_core_keyboard_device_id (connection);
+	struct xkb_keymap *keymap = xkb_x11_keymap_new_from_device (context, connection, device_id, XKB_KEYMAP_COMPILE_NO_FLAGS);
+	char *string = xkb_keymap_get_as_string (keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
+	*size = strlen (string) + 1;
+	*fd = shm_open ("/keymap", O_RDWR|O_CREAT, 0600);
+	ftruncate (*fd, *size);
+	char *map = mmap (NULL, *size, PROT_READ|PROT_WRITE, MAP_SHARED, *fd, 0);
+	strcpy (map, string);
+	munmap (map, *size);
+	//close (fd);
+	free (string);
+	xkb_keymap_unref (keymap);
 }
 
 long backend_get_timestamp (void) {

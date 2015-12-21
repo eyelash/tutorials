@@ -3,8 +3,9 @@
 struct callbacks {
 	void (*resize) (int width, int height);
 	void (*draw) (void);
-	void (*mouse_event) (int x, int y, int type);
-	void (*keyboard_event) (int key);
+	void (*mouse_motion) (int x, int y);
+	void (*mouse_button) (int button, int state);
+	void (*keyboard) (int key, int state);
 };
 
 void backend_init (struct callbacks *callbacks);
@@ -13,4 +14,5 @@ void backend_swap_buffers (void);
 int backend_get_fd (void);
 void backend_dispatch_nonblocking (void);
 void backend_request_redraw (void);
+void backend_get_keymap (int *fd, int *size);
 long backend_get_timestamp (void);

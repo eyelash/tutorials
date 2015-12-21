@@ -1,8 +1,7 @@
-// gcc -o wayland-compositor wayland-compositor.c backend-x11.c xdg-shell.c -lwayland-server -lX11 -lEGL -lGL
+// gcc -o wayland-compositor wayland-compositor.c backend-x11.c xdg-shell.c -lwayland-server -lX11 -lEGL -lGL -lX11-xcb -lxkbcommon-x11 -lxkbcommon -lrt
 
 #include <wayland-server.h>
 #include "xdg-shell.h"
-#include <linux/input.h>
 #include <stdlib.h>
 #include "backend.h"
 #include <GL/gl.h>
@@ -10,6 +9,26 @@
 #include <stdio.h>
 
 static struct wl_display *display;
+static int pointer_x, pointer_y;
+
+struct client {
+	struct wl_client *client;
+	struct wl_resource *pointer;
+	struct wl_resource *keyboard;
+	struct wl_list link;
+};
+static struct wl_list clients;
+
+static struct client *get_client (struct wl_client *_client) {
+	struct client *client;
+	wl_list_for_each (client, &clients, link) {
+		if (client->client == _client) return client;
+	}
+	client = calloc (1, sizeof(struct client));
+	client->client = _client;
+	wl_list_insert (&clients, &client->link);
+	return client;
+}
 
 struct surface {
 	struct wl_resource *surface;
@@ -18,7 +37,7 @@ struct surface {
 	struct wl_resource *frame_callback;
 	int x, y;
 	struct texture texture;
-	struct wl_resource *pointer;
+	struct client *client;
 	struct wl_list link;
 };
 static struct wl_list surfaces;
@@ -26,20 +45,9 @@ static struct surface *cursor = NULL;
 static struct surface *moving_surface = NULL;
 static struct surface *active_surface = NULL;
 static struct surface *pointer_surface = NULL; // surface under the pointer
-static struct wl_resource *pointer = NULL;
 
-static int pointer_x, pointer_y;
-struct wl_array pointers;
-
-static struct wl_resource *surface_get_pointer (struct surface *surface) {
-	struct wl_client *client = wl_resource_get_client (surface->surface);
-	struct wl_resource **pointer;
-	wl_array_for_each (pointer, &pointers) {
-		if (wl_resource_get_client(*pointer) == client) return *pointer;
-	}
-	return NULL;
-}
 static void deactivate_surface (struct surface *surface) {
+	if (surface->client->keyboard) wl_keyboard_send_leave (surface->client->keyboard, 0, surface->surface);
 	struct wl_array state_array;
 	wl_array_init (&state_array);
 	xdg_surface_send_configure (surface->xdg_surface, 0, 0, &state_array, 0);
@@ -47,22 +55,19 @@ static void deactivate_surface (struct surface *surface) {
 static void activate_surface (struct surface *surface) {
 	wl_list_remove (&surface->link);
 	wl_list_insert (&surfaces, &surface->link);
-	struct wl_array state_array;
-	wl_array_init (&state_array);
-	int32_t *states = wl_array_add (&state_array, sizeof(int32_t));
+	struct wl_array array;
+	wl_array_init (&array);
+	if (surface->client->keyboard) wl_keyboard_send_enter (surface->client->keyboard, 0, surface->surface, &array);
+	int32_t *states = wl_array_add (&array, sizeof(int32_t));
 	states[0] = XDG_SURFACE_STATE_ACTIVATED;
-	xdg_surface_send_configure (surface->xdg_surface, 0, 0, &state_array, 0);
-	active_surface = surface;
+	xdg_surface_send_configure (surface->xdg_surface, 0, 0, &array, 0);
 }
-
-static void surface_delete (struct wl_resource *resource) {
+static void delete_surface (struct wl_resource *resource) {
 	struct surface *surface = wl_resource_get_user_data (resource);
 	wl_list_remove (&surface->link);
 	if (surface == active_surface) active_surface = NULL;
-	if (surface == pointer_surface) {
-		pointer_surface = NULL;
-		pointer = NULL;
-	}
+	if (surface == pointer_surface) pointer_surface = NULL;
+	free (surface);
 	backend_request_redraw ();
 }
 
@@ -97,10 +102,6 @@ static void surface_commit (struct wl_client *client, struct wl_resource *resour
 	texture_create (&surface->texture, width, height, data);
 	wl_buffer_send_release (surface->buffer);
 	backend_request_redraw ();
-	if (surface->frame_callback) {
-		wl_callback_send_done (surface->frame_callback, backend_get_timestamp());
-		surface->frame_callback = NULL;
-	}
 }
 static void surface_set_buffer_transform (struct wl_client *client, struct wl_resource *resource, int32_t transform) {
 	
@@ -126,7 +127,8 @@ static struct wl_region_interface region_interface = {&region_destroy, &region_a
 static void compositor_create_surface (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	struct surface *surface = calloc (1, sizeof(struct surface));
 	surface->surface = wl_resource_create (client, &wl_surface_interface, 3, id);
-	wl_resource_set_implementation (surface->surface, &surface_interface, surface, &surface_delete);
+	wl_resource_set_implementation (surface->surface, &surface_interface, surface, &delete_surface);
+	surface->client = get_client (client);
 	wl_list_insert (&surfaces, &surface->link);
 }
 static void compositor_create_region (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
@@ -275,12 +277,17 @@ static struct wl_keyboard_interface keyboard_interface = {&keyboard_release};
 
 // seat
 static void seat_get_pointer (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
-	struct wl_resource **pointer = wl_array_add (&pointers, sizeof(struct wl_resource*));
-	*pointer = wl_resource_create (client, &wl_pointer_interface, 1, id);
-	wl_resource_set_implementation (*pointer, &pointer_interface, NULL, NULL);
+	struct wl_resource *pointer = wl_resource_create (client, &wl_pointer_interface, 1, id);
+	wl_resource_set_implementation (pointer, &pointer_interface, NULL, NULL);
+	get_client(client)->pointer = pointer;
 }
 static void seat_get_keyboard (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
-	
+	struct wl_resource *keyboard = wl_resource_create (client, &wl_keyboard_interface, 1, id);
+	wl_resource_set_implementation (keyboard, &keyboard_interface, NULL, NULL);
+	get_client(client)->keyboard = keyboard;
+	int fd, size;
+	backend_get_keymap (&fd, &size);
+	wl_keyboard_send_keymap (keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, size);
 }
 static void seat_get_touch (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	
@@ -290,7 +297,7 @@ static void seat_bind (struct wl_client *client, void *data, uint32_t version, u
 	printf ("bind: seat\n");
 	struct wl_resource *seat = wl_resource_create (client, &wl_seat_interface, 1, id);
 	wl_resource_set_implementation (seat, &seat_interface, NULL, NULL);
-	wl_seat_send_capabilities (seat, WL_SEAT_CAPABILITY_POINTER);
+	wl_seat_send_capabilities (seat, WL_SEAT_CAPABILITY_POINTER|WL_SEAT_CAPABILITY_KEYBOARD);
 }
 
 // backend callbacks
@@ -316,6 +323,10 @@ static void draw (void) {
 			texture_draw (&surface->texture, pointer_x + surface->x, pointer_y + surface->y);
 		else
 			texture_draw (&surface->texture, surface->x, surface->y);
+		if (surface->frame_callback) {
+			wl_callback_send_done (surface->frame_callback, backend_get_timestamp());
+			surface->frame_callback = NULL;
+		}
 	}
 	// draw the cursor last
 	if (cursor) texture_draw (&cursor->texture, pointer_x, pointer_y);
@@ -323,23 +334,14 @@ static void draw (void) {
 	glFlush ();
 	backend_swap_buffers ();
 }
-static void mouse_event (int x, int y, int type) {
-	if (type == 0) {
-		pointer_x = x;
-		pointer_y = y;
-		if (cursor) backend_request_redraw ();
-	}
-	// special case: moving surface
+static void mouse_motion (int x, int y) {
+	pointer_x = x;
+	pointer_y = y;
+	if (cursor) backend_request_redraw ();
 	if (moving_surface) {
-		if (type == 2) {
-			moving_surface->x = x + moving_surface->x;
-			moving_surface->y = y + moving_surface->y;
-			moving_surface = NULL;
-		}
 		backend_request_redraw ();
 		return;
 	}
-	long timestamp = backend_get_timestamp ();
 	// get surface under the pointer
 	struct surface *next_pointer_surface = NULL;
 	struct surface *s;
@@ -350,33 +352,36 @@ static void mouse_event (int x, int y, int type) {
 	}
 	// pointer enter and leave
 	if (next_pointer_surface != pointer_surface) {
-		if (pointer) wl_pointer_send_leave (pointer, 0, pointer_surface->surface);
-		pointer = NULL;
+		if (pointer_surface && pointer_surface->client->pointer)
+			wl_pointer_send_leave (pointer_surface->client->pointer, 0, pointer_surface->surface);
 		pointer_surface = next_pointer_surface;
-		if (pointer_surface) {
-			pointer = surface_get_pointer (pointer_surface);
-			if (pointer) wl_pointer_send_enter (pointer, 0, pointer_surface->surface, x, y);
-		}
+		if (pointer_surface && pointer_surface->client->pointer)
+			wl_pointer_send_enter (pointer_surface->client->pointer, 0, pointer_surface->surface, x, y);
 	}
-	if (!pointer) return;
+	if (!pointer_surface || !pointer_surface->client->pointer) return;
 	wl_fixed_t surface_x = wl_fixed_from_double (x - pointer_surface->x);
 	wl_fixed_t surface_y = wl_fixed_from_double (y - pointer_surface->y);
-	if (type == 0) {
-		wl_pointer_send_motion (pointer, timestamp, surface_x, surface_y);
+	wl_pointer_send_motion (pointer_surface->client->pointer, backend_get_timestamp(), surface_x, surface_y);
+}
+static void mouse_button (int button, int state) {
+	if (moving_surface && state == WL_POINTER_BUTTON_STATE_RELEASED) {
+		moving_surface->x = pointer_x + moving_surface->x;
+		moving_surface->y = pointer_y + moving_surface->y;
+		moving_surface = NULL;
 	}
-	else if (type == 1) {
+	if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
 		if (pointer_surface != active_surface) {
 			if (active_surface) deactivate_surface (active_surface);
-			activate_surface (pointer_surface);
+			active_surface = pointer_surface;
+			if (active_surface) activate_surface (active_surface);
 		}
-		wl_pointer_send_button (pointer, 0, timestamp, BTN_LEFT, WL_POINTER_BUTTON_STATE_PRESSED);
 	}
-	else if (type == 2) {
-		wl_pointer_send_button (pointer, 0, timestamp, BTN_LEFT, WL_POINTER_BUTTON_STATE_RELEASED);
-	}
+	if (!pointer_surface || !pointer_surface->client->pointer) return;
+	wl_pointer_send_button (pointer_surface->client->pointer, 0, backend_get_timestamp(), button, state);
 }
-static void keyboard_event (int key) {
-	
+static void keyboard_event (int key, int state) {
+	if (!active_surface || !active_surface->client->keyboard) return;
+	wl_keyboard_send_key (active_surface->client->keyboard, 0, backend_get_timestamp(), key, state);
 }
 
 static int backend_readable (int fd, uint32_t mask, void *data) {
@@ -384,10 +389,10 @@ static int backend_readable (int fd, uint32_t mask, void *data) {
 }
 
 int main () {
-	struct callbacks callbacks = {&resize, &draw, &mouse_event, &keyboard_event};
+	struct callbacks callbacks = {&resize, &draw, &mouse_motion, &mouse_button, &keyboard_event};
 	backend_init (&callbacks);
+	wl_list_init (&clients);
 	wl_list_init (&surfaces);
-	wl_array_init (&pointers);
 	display = wl_display_create ();
 	wl_display_add_socket (display, "wayland-0");
 	wl_global_create (display, &wl_compositor_interface, 3, NULL, &compositor_bind);
