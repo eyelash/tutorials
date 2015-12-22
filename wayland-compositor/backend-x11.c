@@ -7,6 +7,7 @@
 #include <xkbcommon/xkbcommon-x11.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
