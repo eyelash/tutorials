@@ -25,6 +25,8 @@ static Display *x_display;
 static EGLDisplay egl_display;
 static struct callbacks callbacks;
 static char redraw_requested = -1;
+static struct xkb_keymap *keymap;
+static struct xkb_state *state;
 
 static void create_window (void) {
 	// setup EGL
@@ -32,7 +34,6 @@ static void create_window (void) {
 		EGL_RED_SIZE, 1,
 		EGL_GREEN_SIZE, 1,
 		EGL_BLUE_SIZE, 1,
-		//EGL_RENDERABLE_TYPE, 
 	EGL_NONE};
 	EGLConfig config;
 	EGLint num_configs_returned;
@@ -77,6 +78,14 @@ static void create_window (void) {
 void backend_init (struct callbacks *_callbacks) {
 	callbacks = *_callbacks;
 	x_display = XOpenDisplay (NULL);
+	
+	xcb_connection_t *connection = XGetXCBConnection (x_display);
+	struct xkb_context *context = xkb_context_new (XKB_CONTEXT_NO_FLAGS);
+	xkb_x11_setup_xkb_extension (connection, XKB_X11_MIN_MAJOR_XKB_VERSION, XKB_X11_MIN_MINOR_XKB_VERSION, 0, NULL, NULL, NULL, NULL);
+	int32_t device_id = xkb_x11_get_core_keyboard_device_id (connection);
+	keymap = xkb_x11_keymap_new_from_device (context, connection, device_id, XKB_KEYMAP_COMPILE_NO_FLAGS);
+	state = xkb_x11_state_new_from_device (keymap, connection, device_id);
+	
 	EGLint major_version, minor_version;
 	egl_display = eglGetDisplay (x_display);
 	eglInitialize (egl_display, &major_version, &minor_version);
@@ -96,6 +105,21 @@ int backend_get_fd (void) {
 	return ConnectionNumber (x_display);
 }
 
+static void update_modifiers (void) {
+	static uint32_t depressed, latched, locked, group;
+	uint32_t new_depressed = xkb_state_serialize_mods (state, XKB_STATE_MODS_DEPRESSED);
+	uint32_t new_latched = xkb_state_serialize_mods (state, XKB_STATE_MODS_LATCHED);
+	uint32_t new_locked = xkb_state_serialize_mods (state, XKB_STATE_MODS_LOCKED);
+	uint32_t new_group = xkb_state_serialize_layout (state, XKB_STATE_LAYOUT_EFFECTIVE);
+	if (new_depressed != depressed || new_latched != latched || new_locked != locked || new_group != group) {
+		depressed = new_depressed;
+		latched = new_latched;
+		locked = new_locked;
+		group = new_group;
+		callbacks.modifiers (depressed, latched, locked, group);
+	}
+}
+
 void backend_dispatch_nonblocking (void) {
 	redraw_requested = 0;
 	XEvent event;
@@ -111,16 +135,30 @@ void backend_dispatch_nonblocking (void) {
 			callbacks.mouse_motion (event.xbutton.x, event.xbutton.y);
 		}
 		else if (event.type == ButtonPress) {
-			callbacks.mouse_button (BTN_LEFT, WL_POINTER_BUTTON_STATE_PRESSED);
+			if (event.xbutton.button == Button1)
+				callbacks.mouse_button (BTN_LEFT, WL_POINTER_BUTTON_STATE_PRESSED);
+			else if (event.xbutton.button == Button2)
+				callbacks.mouse_button (BTN_MIDDLE, WL_POINTER_BUTTON_STATE_PRESSED);
+			else if (event.xbutton.button == Button3)
+				callbacks.mouse_button (BTN_RIGHT, WL_POINTER_BUTTON_STATE_PRESSED);
 		}
 		else if (event.type == ButtonRelease) {
-			callbacks.mouse_button (BTN_LEFT, WL_POINTER_BUTTON_STATE_RELEASED);
+			if (event.xbutton.button == Button1)
+				callbacks.mouse_button (BTN_LEFT, WL_POINTER_BUTTON_STATE_RELEASED);
+			else if (event.xbutton.button == Button2)
+				callbacks.mouse_button (BTN_MIDDLE, WL_POINTER_BUTTON_STATE_RELEASED);
+			else if (event.xbutton.button == Button3)
+				callbacks.mouse_button (BTN_RIGHT, WL_POINTER_BUTTON_STATE_RELEASED);
 		}
 		else if (event.type == KeyPress) {
-			callbacks.keyboard (event.xkey.keycode - 8, WL_KEYBOARD_KEY_STATE_PRESSED);
+			callbacks.key (event.xkey.keycode - 8, WL_KEYBOARD_KEY_STATE_PRESSED);
+			xkb_state_update_key (state, event.xkey.keycode, XKB_KEY_DOWN);
+			update_modifiers ();
 		}
 		else if (event.type == KeyRelease) {
-			callbacks.keyboard (event.xkey.keycode - 8, WL_KEYBOARD_KEY_STATE_RELEASED);
+			callbacks.key (event.xkey.keycode - 8, WL_KEYBOARD_KEY_STATE_RELEASED);
+			xkb_state_update_key (state, event.xkey.keycode, XKB_KEY_UP);
+			update_modifiers ();
 		}
 	}
 	if (redraw_requested) callbacks.draw ();
@@ -133,10 +171,6 @@ void backend_request_redraw (void) {
 }
 
 void backend_get_keymap (int *fd, int *size) {
-	struct xkb_context *context = xkb_context_new (XKB_CONTEXT_NO_FLAGS);
-	xcb_connection_t *connection = XGetXCBConnection (x_display);
-	int32_t device_id = xkb_x11_get_core_keyboard_device_id (connection);
-	struct xkb_keymap *keymap = xkb_x11_keymap_new_from_device (context, connection, device_id, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	char *string = xkb_keymap_get_as_string (keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
 	*size = strlen (string) + 1;
 	*fd = shm_open ("/keymap", O_RDWR|O_CREAT, 0600);
@@ -146,7 +180,6 @@ void backend_get_keymap (int *fd, int *size) {
 	munmap (map, *size);
 	//close (fd);
 	free (string);
-	xkb_keymap_unref (keymap);
 }
 
 long backend_get_timestamp (void) {

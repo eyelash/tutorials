@@ -5,7 +5,8 @@ struct callbacks {
 	void (*draw) (void);
 	void (*mouse_motion) (int x, int y);
 	void (*mouse_button) (int button, int state);
-	void (*keyboard) (int key, int state);
+	void (*key) (int key, int state);
+	void (*modifiers) (int depressed, int latched, int locked, int group);
 };
 
 void backend_init (struct callbacks *callbacks);

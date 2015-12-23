@@ -304,7 +304,7 @@ static void seat_bind (struct wl_client *client, void *data, uint32_t version, u
 }
 
 // backend callbacks
-static void resize (int width, int height) {
+static void handle_resize_event (int width, int height) {
 	glViewport (0, 0, width, height);
 	glMatrixMode (GL_PROJECTION);
 	glLoadIdentity ();
@@ -314,7 +314,7 @@ static void resize (int width, int height) {
 	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glEnable (GL_BLEND);
 }
-static void draw (void) {
+static void handle_draw_event (void) {
 	glClearColor (0, 1, 0, 1);
 	glClear (GL_COLOR_BUFFER_BIT);
 	glLoadIdentity();
@@ -337,7 +337,7 @@ static void draw (void) {
 	glFlush ();
 	backend_swap_buffers ();
 }
-static void mouse_motion (int x, int y) {
+static void handle_mouse_motion_event (int x, int y) {
 	pointer_x = x;
 	pointer_y = y;
 	if (cursor) backend_request_redraw ();
@@ -366,7 +366,7 @@ static void mouse_motion (int x, int y) {
 	wl_fixed_t surface_y = wl_fixed_from_double (y - pointer_surface->y);
 	wl_pointer_send_motion (pointer_surface->client->pointer, backend_get_timestamp(), surface_x, surface_y);
 }
-static void mouse_button (int button, int state) {
+static void handle_mouse_button_event (int button, int state) {
 	if (moving_surface && state == WL_POINTER_BUTTON_STATE_RELEASED) {
 		moving_surface->x = pointer_x + moving_surface->x;
 		moving_surface->y = pointer_y + moving_surface->y;
@@ -382,9 +382,13 @@ static void mouse_button (int button, int state) {
 	if (!pointer_surface || !pointer_surface->client->pointer) return;
 	wl_pointer_send_button (pointer_surface->client->pointer, 0, backend_get_timestamp(), button, state);
 }
-static void keyboard_event (int key, int state) {
+static void handle_key_event (int key, int state) {
 	if (!active_surface || !active_surface->client->keyboard) return;
 	wl_keyboard_send_key (active_surface->client->keyboard, 0, backend_get_timestamp(), key, state);
+}
+static void handle_modifiers_changed (int depressed, int latched, int locked, int group) {
+	if (!active_surface || !active_surface->client->keyboard) return;
+	wl_keyboard_send_modifiers (active_surface->client->keyboard, 0, depressed, latched, locked, group);
 }
 
 static int backend_readable (int fd, uint32_t mask, void *data) {
@@ -392,7 +396,7 @@ static int backend_readable (int fd, uint32_t mask, void *data) {
 }
 
 int main () {
-	struct callbacks callbacks = {&resize, &draw, &mouse_motion, &mouse_button, &keyboard_event};
+	struct callbacks callbacks = {&handle_resize_event, &handle_draw_event, &handle_mouse_motion_event, &handle_mouse_button_event, &handle_key_event, &handle_modifiers_changed};
 	backend_init (&callbacks);
 	wl_list_init (&clients);
 	wl_list_init (&surfaces);
