@@ -1,12 +1,16 @@
 #include <EGL/egl.h>
 
+struct modifier_state {
+	uint32_t depressed, latched, locked, group;
+};
+
 struct callbacks {
 	void (*resize) (int width, int height);
 	void (*draw) (void);
 	void (*mouse_motion) (int x, int y);
 	void (*mouse_button) (int button, int state);
 	void (*key) (int key, int state);
-	void (*modifiers) (int depressed, int latched, int locked, int group);
+	void (*modifiers) (struct modifier_state modifier_state);
 };
 
 void backend_init (struct callbacks *callbacks);

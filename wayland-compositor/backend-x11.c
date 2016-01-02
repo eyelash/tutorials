@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "backend.h"
 #include <wayland-server.h>
 #include <X11/Xlib.h>
@@ -10,8 +11,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <time.h>
+#include <stdio.h>
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
@@ -25,6 +26,8 @@ static Display *x_display;
 static EGLDisplay egl_display;
 static struct callbacks callbacks;
 static char redraw_requested = -1;
+static xcb_connection_t *xcb_connection;
+static int32_t keyboard_device_id;
 static struct xkb_keymap *keymap;
 static struct xkb_state *state;
 
@@ -49,7 +52,7 @@ static void create_window (void) {
 	
 	// create a window
 	XSetWindowAttributes window_attributes;
-	window_attributes.event_mask = ExposureMask | StructureNotifyMask | KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | EnterWindowMask | LeaveWindowMask;
+	window_attributes.event_mask = ExposureMask | StructureNotifyMask | KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | EnterWindowMask | LeaveWindowMask | FocusChangeMask;
 	window_attributes.colormap = XCreateColormap (x_display, RootWindow(x_display,DefaultScreen(x_display)), visual->visual, AllocNone);
 	window.window = XCreateWindow (
 		x_display,
@@ -79,12 +82,12 @@ void backend_init (struct callbacks *_callbacks) {
 	callbacks = *_callbacks;
 	x_display = XOpenDisplay (NULL);
 	
-	xcb_connection_t *connection = XGetXCBConnection (x_display);
+	xcb_connection = XGetXCBConnection (x_display);
 	struct xkb_context *context = xkb_context_new (XKB_CONTEXT_NO_FLAGS);
-	xkb_x11_setup_xkb_extension (connection, XKB_X11_MIN_MAJOR_XKB_VERSION, XKB_X11_MIN_MINOR_XKB_VERSION, 0, NULL, NULL, NULL, NULL);
-	int32_t device_id = xkb_x11_get_core_keyboard_device_id (connection);
-	keymap = xkb_x11_keymap_new_from_device (context, connection, device_id, XKB_KEYMAP_COMPILE_NO_FLAGS);
-	state = xkb_x11_state_new_from_device (keymap, connection, device_id);
+	xkb_x11_setup_xkb_extension (xcb_connection, XKB_X11_MIN_MAJOR_XKB_VERSION, XKB_X11_MIN_MINOR_XKB_VERSION, 0, NULL, NULL, NULL, NULL);
+	keyboard_device_id = xkb_x11_get_core_keyboard_device_id (xcb_connection);
+	keymap = xkb_x11_keymap_new_from_device (context, xcb_connection, keyboard_device_id, XKB_KEYMAP_COMPILE_NO_FLAGS);
+	state = xkb_x11_state_new_from_device (keymap, xcb_connection, keyboard_device_id);
 	
 	EGLint major_version, minor_version;
 	egl_display = eglGetDisplay (x_display);
@@ -106,18 +109,12 @@ int backend_get_fd (void) {
 }
 
 static void update_modifiers (void) {
-	static uint32_t depressed, latched, locked, group;
-	uint32_t new_depressed = xkb_state_serialize_mods (state, XKB_STATE_MODS_DEPRESSED);
-	uint32_t new_latched = xkb_state_serialize_mods (state, XKB_STATE_MODS_LATCHED);
-	uint32_t new_locked = xkb_state_serialize_mods (state, XKB_STATE_MODS_LOCKED);
-	uint32_t new_group = xkb_state_serialize_layout (state, XKB_STATE_LAYOUT_EFFECTIVE);
-	if (new_depressed != depressed || new_latched != latched || new_locked != locked || new_group != group) {
-		depressed = new_depressed;
-		latched = new_latched;
-		locked = new_locked;
-		group = new_group;
-		callbacks.modifiers (depressed, latched, locked, group);
-	}
+	struct modifier_state modifier_state;
+	modifier_state.depressed = xkb_state_serialize_mods (state, XKB_STATE_MODS_DEPRESSED);
+	modifier_state.latched = xkb_state_serialize_mods (state, XKB_STATE_MODS_LATCHED);
+	modifier_state.locked = xkb_state_serialize_mods (state, XKB_STATE_MODS_LOCKED);
+	modifier_state.group = xkb_state_serialize_layout (state, XKB_STATE_LAYOUT_EFFECTIVE);
+	callbacks.modifiers (modifier_state);
 }
 
 void backend_dispatch_nonblocking (void) {
@@ -160,6 +157,11 @@ void backend_dispatch_nonblocking (void) {
 			xkb_state_update_key (state, event.xkey.keycode, XKB_KEY_UP);
 			update_modifiers ();
 		}
+		else if (event.type == FocusIn) {
+			xkb_state_unref (state);
+			state = xkb_x11_state_new_from_device (keymap, xcb_connection, keyboard_device_id);
+			update_modifiers ();
+		}
 	}
 	if (redraw_requested) callbacks.draw ();
 	redraw_requested = -1;
@@ -173,12 +175,12 @@ void backend_request_redraw (void) {
 void backend_get_keymap (int *fd, int *size) {
 	char *string = xkb_keymap_get_as_string (keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
 	*size = strlen (string) + 1;
-	*fd = shm_open ("/keymap", O_RDWR|O_CREAT, 0600);
+	char *xdg_runtime_dir = getenv ("XDG_RUNTIME_DIR");
+	*fd = open (xdg_runtime_dir, O_TMPFILE|O_RDWR|O_EXCL, 0600);
 	ftruncate (*fd, *size);
 	char *map = mmap (NULL, *size, PROT_READ|PROT_WRITE, MAP_SHARED, *fd, 0);
 	strcpy (map, string);
 	munmap (map, *size);
-	//close (fd);
 	free (string);
 }
 

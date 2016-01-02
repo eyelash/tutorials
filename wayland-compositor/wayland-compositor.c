@@ -1,4 +1,4 @@
-// gcc -o wayland-compositor wayland-compositor.c backend-x11.c xdg-shell.c -lwayland-server -lX11 -lEGL -lGL -lX11-xcb -lxkbcommon-x11 -lxkbcommon -lrt
+// gcc -o wayland-compositor wayland-compositor.c backend-x11.c xdg-shell.c -lwayland-server -lX11 -lEGL -lGL -lX11-xcb -lxkbcommon-x11 -lxkbcommon
 
 #include <wayland-server.h>
 #include "xdg-shell.h"
@@ -10,6 +10,7 @@
 
 static struct wl_display *display;
 static int pointer_x, pointer_y;
+static struct modifier_state modifier_state;
 
 struct client {
 	struct wl_client *client;
@@ -57,7 +58,10 @@ static void activate_surface (struct surface *surface) {
 	wl_list_insert (&surfaces, &surface->link);
 	struct wl_array array;
 	wl_array_init (&array);
-	if (surface->client->keyboard) wl_keyboard_send_enter (surface->client->keyboard, 0, surface->surface, &array);
+	if (surface->client->keyboard) {
+		wl_keyboard_send_enter (surface->client->keyboard, 0, surface->surface, &array);
+		wl_keyboard_send_modifiers (surface->client->keyboard, 0, modifier_state.depressed, modifier_state.latched, modifier_state.locked, modifier_state.group);
+	}
 	int32_t *states = wl_array_add (&array, sizeof(int32_t));
 	states[0] = XDG_SURFACE_STATE_ACTIVATED;
 	xdg_surface_send_configure (surface->xdg_surface, 0, 0, &array, 0);
@@ -291,6 +295,7 @@ static void seat_get_keyboard (struct wl_client *client, struct wl_resource *res
 	int fd, size;
 	backend_get_keymap (&fd, &size);
 	wl_keyboard_send_keymap (keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, size);
+	//close (fd);
 }
 static void seat_get_touch (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	
@@ -328,6 +333,7 @@ static void handle_draw_event (void) {
 			texture_draw (&surface->texture, surface->x, surface->y);
 		if (surface->frame_callback) {
 			wl_callback_send_done (surface->frame_callback, backend_get_timestamp());
+			wl_resource_destroy (surface->frame_callback);
 			surface->frame_callback = NULL;
 		}
 	}
@@ -386,9 +392,11 @@ static void handle_key_event (int key, int state) {
 	if (!active_surface || !active_surface->client->keyboard) return;
 	wl_keyboard_send_key (active_surface->client->keyboard, 0, backend_get_timestamp(), key, state);
 }
-static void handle_modifiers_changed (int depressed, int latched, int locked, int group) {
-	if (!active_surface || !active_surface->client->keyboard) return;
-	wl_keyboard_send_modifiers (active_surface->client->keyboard, 0, depressed, latched, locked, group);
+static void handle_modifiers_changed (struct modifier_state new_state) {
+	if (new_state.depressed == modifier_state.depressed && new_state.latched == modifier_state.latched && new_state.locked == modifier_state.locked && new_state.group == modifier_state.group) return;
+	modifier_state = new_state;
+	if (active_surface && active_surface->client->keyboard)
+		wl_keyboard_send_modifiers (active_surface->client->keyboard, 0, modifier_state.depressed, modifier_state.latched, modifier_state.locked, modifier_state.group);
 }
 
 static int backend_readable (int fd, uint32_t mask, void *data) {
