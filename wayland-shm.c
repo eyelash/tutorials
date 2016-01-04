@@ -7,12 +7,9 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <string.h>
-#include <stdio.h>
 
 #define WIDTH 256
 #define HEIGHT 256
-
-#define EXIT(msg) { fputs (msg, stderr); exit (EXIT_FAILURE); }
 
 static struct wl_display *display;
 static struct wl_compositor *compositor = NULL;
@@ -30,8 +27,7 @@ struct window {
 
 // listeners
 static void registry_add_object (void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version) {
-	printf ("registry_add_object: %s\n", interface);
-	if (strcmp(interface,"wl_compositor") == 0) {
+	if (!strcmp(interface,"wl_compositor")) {
 		compositor = wl_registry_bind (registry, name, &wl_compositor_interface, 0);
 	}
 	else if (!strcmp(interface,"wl_shell")) {
@@ -45,14 +41,6 @@ static void registry_remove_object (void *data, struct wl_registry *registry, ui
 	
 }
 static struct wl_registry_listener registry_listener = {&registry_add_object, &registry_remove_object};
-
-static void surface_enter (void *data, struct wl_surface *wl_surface, struct wl_output *output) {
-	
-}
-static void surface_leave (void *data, struct wl_surface *wl_surface, struct wl_output *output) {
-	
-}
-static struct wl_surface_listener surface_listener = {&surface_enter, &surface_leave};
 
 static void shell_surface_ping (void *data, struct wl_shell_surface *shell_surface, uint32_t serial) {
 	wl_shell_surface_pong (shell_surface, serial);
@@ -69,14 +57,12 @@ static void create_window (struct window *window, int32_t width, int32_t height)
 	window->width = width;
 	window->height = height;
 	window->surface = wl_compositor_create_surface (compositor);
-	wl_surface_add_listener (window->surface, &surface_listener, NULL);
 	window->shell_surface = wl_shell_get_shell_surface (shell, window->surface);
 	wl_shell_surface_add_listener (window->shell_surface, &shell_surface_listener, NULL);
 	wl_shell_surface_set_toplevel (window->shell_surface);
 	
 	size_t size = width * height * 4;
 	char *xdg_runtime_dir = getenv ("XDG_RUNTIME_DIR");
-	if (!xdg_runtime_dir) EXIT ("XDG_RUNTIME_DIR not set\n");
 	int fd = open (xdg_runtime_dir, O_TMPFILE|O_RDWR|O_EXCL, 0600);
 	ftruncate (fd, size);
 	window->data = mmap (NULL, size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);

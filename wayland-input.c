@@ -5,6 +5,7 @@
 #include <EGL/egl.h>
 #include <GL/gl.h>
 #include <sys/mman.h>
+#include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
 #include <string.h>
 #include <stdio.h>
@@ -50,8 +51,10 @@ static struct wl_pointer_listener pointer_listener = {&pointer_enter, &pointer_l
 
 static void keyboard_keymap (void *data, struct wl_keyboard *keyboard, uint32_t format, int32_t fd, uint32_t size) {
 	char *keymap_string = mmap (NULL, size, PROT_READ, MAP_SHARED, fd, 0);
+	xkb_keymap_unref (keymap);
 	keymap = xkb_keymap_new_from_string (xkb_context, keymap_string, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	munmap (keymap_string, size);
+	close (fd);
 	xkb_state_unref (xkb_state);
 	xkb_state = xkb_state_new (keymap);
 }
@@ -64,9 +67,9 @@ static void keyboard_leave (void *data, struct wl_keyboard *keyboard, uint32_t s
 static void keyboard_key (void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {
 	if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
 		xkb_keysym_t keysym = xkb_state_key_get_one_sym (xkb_state, key+8);
-		uint32_t utf32;
-		if (utf32 = xkb_keysym_to_utf32(keysym)) {
-			if (utf32 < 128) {
+		uint32_t utf32 = xkb_keysym_to_utf32 (keysym);
+		if (utf32) {
+			if (utf32 >= 0x21 && utf32 <= 0x7E) {
 				printf ("the key %c was pressed\n", (char)utf32);
 				if (utf32 == 'q') running = 0;
 			}
@@ -77,7 +80,7 @@ static void keyboard_key (void *data, struct wl_keyboard *keyboard, uint32_t ser
 		else {
 			char name[64];
 			xkb_keysym_get_name (keysym, name, 64);
-			printf ("%s\n", name);
+			printf ("the key %s was pressed\n", name);
 		}
 	}
 }
@@ -164,7 +167,7 @@ int main () {
 	display = wl_display_connect (NULL);
 	struct wl_registry *registry = wl_display_get_registry (display);
 	wl_registry_add_listener (registry, &registry_listener, NULL);
-	wl_display_dispatch (display);
+	wl_display_roundtrip (display);
 	
 	egl_display = eglGetDisplay (display);
 	eglInitialize (egl_display, NULL, NULL);

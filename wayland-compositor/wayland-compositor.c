@@ -409,7 +409,7 @@ int main () {
 	wl_list_init (&clients);
 	wl_list_init (&surfaces);
 	display = wl_display_create ();
-	wl_display_add_socket (display, "wayland-0");
+	wl_display_add_socket_auto (display);
 	wl_global_create (display, &wl_compositor_interface, 3, NULL, &compositor_bind);
 	wl_global_create (display, &wl_shell_interface, 1, NULL, &shell_bind);
 	wl_global_create (display, &xdg_shell_interface, 1, NULL, &xdg_shell_bind);

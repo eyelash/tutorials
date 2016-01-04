@@ -5,7 +5,6 @@
 #include <EGL/egl.h>
 #include <GL/gl.h>
 #include <string.h>
-#include <stdio.h>
 
 #define WIDTH 256
 #define HEIGHT 256
