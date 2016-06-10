@@ -318,6 +318,7 @@ static void seat_get_keyboard (struct wl_client *client, struct wl_resource *res
 	int fd, size;
 	backend_get_keymap (&fd, &size);
 	wl_keyboard_send_keymap (keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, size);
+	wl_keyboard_send_repeat_info (keyboard, 5, 1000);
 	//close (fd);
 }
 static void seat_get_touch (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
@@ -329,6 +330,53 @@ static void seat_bind (struct wl_client *client, void *data, uint32_t version, u
 	struct wl_resource *seat = wl_resource_create (client, &wl_seat_interface, 1, id);
 	wl_resource_set_implementation (seat, &seat_interface, NULL, NULL);
 	wl_seat_send_capabilities (seat, WL_SEAT_CAPABILITY_POINTER|WL_SEAT_CAPABILITY_KEYBOARD);
+}
+
+// output
+static void output_bind (struct wl_client *client, void *data, uint32_t version, uint32_t id) {
+	printf ("bind: output\n");
+	struct wl_resource *output = wl_resource_create (client, &wl_output_interface, version, id);
+	wl_output_send_geometry (output, 0, 0, 0, 0, 0, "", "", 0);
+	wl_output_send_mode (output, 0, 800, 600, 60);
+	wl_output_send_scale (output, 1);
+	wl_output_send_done (output);
+}
+
+// data source
+static void data_source_offer (struct wl_client *client, struct wl_resource *resource, const char *mime_type) {
+	
+}
+static void data_source_destroy (struct wl_client *client, struct wl_resource *resource) {
+	
+}
+static struct wl_data_source_interface data_source_interface = {&data_source_offer, &data_source_destroy};
+
+// data device
+static void data_device_start_drag (struct wl_client *client, struct wl_resource *resource, struct wl_resource *source, struct wl_resource *origin, struct wl_resource *icon, uint32_t serial) {
+	
+}
+static void data_device_set_selection (struct wl_client *client, struct wl_resource *resource, struct wl_resource *source, uint32_t serial) {
+	
+}
+static void data_device_release (struct wl_client *client, struct wl_resource *resource) {
+	
+}
+static struct wl_data_device_interface data_device_interface = {&data_device_start_drag, &data_device_set_selection, &data_device_release};
+
+// data device manager
+void data_device_manager_create_data_source (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+	struct wl_resource *data_source = wl_resource_create (client, &wl_data_source_interface, 1, id);
+	wl_resource_set_implementation (data_source, &data_source_interface, NULL, NULL);
+}
+void data_device_manager_get_data_device (struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *seat) {
+	struct wl_resource *data_device = wl_resource_create (client, &wl_data_device_interface, 1, id);
+	wl_resource_set_implementation (data_device, &data_device_interface, NULL, NULL);
+}
+static struct wl_data_device_manager_interface data_device_manager_interface = {&data_device_manager_create_data_source, &data_device_manager_get_data_device};
+static void data_device_manager_bind (struct wl_client *client, void *data, uint32_t version, uint32_t id) {
+	printf ("bind: data_device_manager\n");
+	struct wl_resource *data_device_manager = wl_resource_create (client, &wl_data_device_manager_interface, version, id);
+	wl_resource_set_implementation (data_device_manager, &data_device_manager_interface, NULL, NULL);
 }
 
 // backend callbacks
@@ -454,6 +502,8 @@ int main () {
 	display = wl_display_create ();
 	wl_display_add_socket_auto (display);
 	wl_global_create (display, &wl_compositor_interface, 3, NULL, &compositor_bind);
+	wl_global_create (display, &wl_data_device_manager_interface, 1, NULL, &data_device_manager_bind);
+	wl_global_create (display, &wl_output_interface, 2, NULL, &output_bind);
 	wl_global_create (display, &wl_shell_interface, 1, NULL, &shell_bind);
 	wl_global_create (display, &xdg_shell_interface, 1, NULL, &xdg_shell_bind);
 	wl_global_create (display, &wl_seat_interface, 1, NULL, &seat_bind);
