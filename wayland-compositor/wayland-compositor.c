@@ -11,6 +11,7 @@
 static struct wl_display *display;
 static int pointer_x, pointer_y;
 static struct modifier_state modifier_state;
+static char redraw_needed = 0;
 
 struct client {
 	struct wl_client *client;
@@ -72,7 +73,7 @@ static void delete_surface (struct wl_resource *resource) {
 	if (surface == active_surface) active_surface = NULL;
 	if (surface == pointer_surface) pointer_surface = NULL;
 	free (surface);
-	backend_request_redraw ();
+	redraw_needed = 1;
 }
 
 // surface
@@ -105,7 +106,7 @@ static void surface_commit (struct wl_client *client, struct wl_resource *resour
 	texture_delete (&surface->texture);
 	texture_create (&surface->texture, width, height, data);
 	wl_buffer_send_release (surface->buffer);
-	backend_request_redraw ();
+	redraw_needed = 1;
 }
 static void surface_set_buffer_transform (struct wl_client *client, struct wl_resource *resource, int32_t transform) {
 	
@@ -319,36 +320,15 @@ static void handle_resize_event (int width, int height) {
 	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glEnable (GL_BLEND);
 }
-static void handle_draw_event (void) {
-	glClearColor (0, 1, 0, 1);
-	glClear (GL_COLOR_BUFFER_BIT);
-	glLoadIdentity();
-	
-	struct surface *surface;
-	wl_list_for_each_reverse (surface, &surfaces, link) {
-		if (!surface->xdg_surface) continue;
-		if (surface == moving_surface)
-			texture_draw (&surface->texture, pointer_x + surface->x, pointer_y + surface->y);
-		else
-			texture_draw (&surface->texture, surface->x, surface->y);
-		if (surface->frame_callback) {
-			wl_callback_send_done (surface->frame_callback, backend_get_timestamp());
-			wl_resource_destroy (surface->frame_callback);
-			surface->frame_callback = NULL;
-		}
-	}
-	// draw the cursor last
-	if (cursor) texture_draw (&cursor->texture, pointer_x, pointer_y);
-	
-	glFlush ();
-	backend_swap_buffers ();
+static void handle_draw_event () {
+	redraw_needed = 1;
 }
 static void handle_mouse_motion_event (int x, int y) {
 	pointer_x = x;
 	pointer_y = y;
-	if (cursor) backend_request_redraw ();
+	if (cursor) redraw_needed = 1;
 	if (moving_surface) {
-		backend_request_redraw ();
+		redraw_needed = 1;
 		return;
 	}
 	// get surface under the pointer
@@ -398,13 +378,51 @@ static void handle_modifiers_changed (struct modifier_state new_state) {
 	if (active_surface && active_surface->client->keyboard)
 		wl_keyboard_send_modifiers (active_surface->client->keyboard, 0, modifier_state.depressed, modifier_state.latched, modifier_state.locked, modifier_state.group);
 }
+static struct callbacks callbacks = {&handle_resize_event, &handle_draw_event, &handle_mouse_motion_event, &handle_mouse_button_event, &handle_key_event, &handle_modifiers_changed};
 
-static int backend_readable (int fd, uint32_t mask, void *data) {
-	backend_dispatch_nonblocking ();
+static void draw (void) {
+	glClearColor (0, 1, 0, 1);
+	glClear (GL_COLOR_BUFFER_BIT);
+	glLoadIdentity();
+	
+	struct surface *surface;
+	wl_list_for_each_reverse (surface, &surfaces, link) {
+		if (!surface->xdg_surface) continue;
+		if (surface == moving_surface)
+			texture_draw (&surface->texture, pointer_x + surface->x, pointer_y + surface->y);
+		else
+			texture_draw (&surface->texture, surface->x, surface->y);
+		if (surface->frame_callback) {
+			wl_callback_send_done (surface->frame_callback, backend_get_timestamp());
+			wl_resource_destroy (surface->frame_callback);
+			surface->frame_callback = NULL;
+		}
+	}
+	// draw the cursor last
+	if (cursor) texture_draw (&cursor->texture, pointer_x, pointer_y);
+	
+	glFlush ();
+	backend_swap_buffers ();
+}
+
+static void main_loop (void) {
+	struct wl_event_loop *event_loop = wl_display_get_event_loop (display);
+	int wayland_fd = wl_event_loop_get_fd (event_loop);
+	while (1) {
+		wl_event_loop_dispatch (event_loop, 0);
+		backend_dispatch_nonblocking ();
+		wl_display_flush_clients (display);
+		if (redraw_needed) {
+			draw ();
+			redraw_needed = 0;
+		}
+		else {
+			backend_wait_for_events (wayland_fd);
+		}
+	}
 }
 
 int main () {
-	struct callbacks callbacks = {&handle_resize_event, &handle_draw_event, &handle_mouse_motion_event, &handle_mouse_button_event, &handle_key_event, &handle_modifiers_changed};
 	backend_init (&callbacks);
 	wl_list_init (&clients);
 	wl_list_init (&surfaces);
@@ -415,10 +433,8 @@ int main () {
 	wl_global_create (display, &xdg_shell_interface, 1, NULL, &xdg_shell_bind);
 	wl_global_create (display, &wl_seat_interface, 1, NULL, &seat_bind);
 	wl_display_init_shm (display);
-	struct wl_event_loop *event_loop = wl_display_get_event_loop (display);
-	wl_event_loop_add_fd (event_loop, backend_get_fd(), WL_EVENT_READABLE, backend_readable, NULL);
 	
-	wl_display_run (display);
+	main_loop ();
 	
 	wl_display_destroy (display);
 	return 0;

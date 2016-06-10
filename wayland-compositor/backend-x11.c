@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdio.h>
+#include <poll.h>
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
@@ -25,7 +26,6 @@ static struct {
 static Display *x_display;
 static EGLDisplay egl_display;
 static struct callbacks callbacks;
-static char redraw_requested = -1;
 static xcb_connection_t *xcb_connection;
 static int32_t keyboard_device_id;
 static struct xkb_keymap *keymap;
@@ -37,6 +37,7 @@ static void create_window (void) {
 		EGL_RED_SIZE, 1,
 		EGL_GREEN_SIZE, 1,
 		EGL_BLUE_SIZE, 1,
+		EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
 	EGL_NONE};
 	EGLConfig config;
 	EGLint num_configs_returned;
@@ -89,10 +90,8 @@ void backend_init (struct callbacks *_callbacks) {
 	keymap = xkb_x11_keymap_new_from_device (context, xcb_connection, keyboard_device_id, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	state = xkb_x11_state_new_from_device (keymap, xcb_connection, keyboard_device_id);
 	
-	EGLint major_version, minor_version;
 	egl_display = eglGetDisplay (x_display);
-	eglInitialize (egl_display, &major_version, &minor_version);
-	printf ("EGL version %i.%i supported\n", major_version, minor_version);
+	eglInitialize (egl_display, NULL, NULL);
 	create_window ();
 }
 
@@ -102,10 +101,6 @@ EGLDisplay backend_get_egl_display (void) {
 
 void backend_swap_buffers (void) {
 	eglSwapBuffers (egl_display, window.surface);
-}
-
-int backend_get_fd (void) {
-	return ConnectionNumber (x_display);
 }
 
 static void update_modifiers (void) {
@@ -118,7 +113,6 @@ static void update_modifiers (void) {
 }
 
 void backend_dispatch_nonblocking (void) {
-	redraw_requested = 0;
 	XEvent event;
 	while (XPending(x_display)) {
 		XNextEvent (x_display, &event);
@@ -126,7 +120,7 @@ void backend_dispatch_nonblocking (void) {
 			callbacks.resize (event.xconfigure.width, event.xconfigure.height);
 		}
 		else if (event.type == Expose) {
-			redraw_requested = 1;
+			callbacks.draw ();
 		}
 		else if (event.type == MotionNotify) {
 			callbacks.mouse_motion (event.xbutton.x, event.xbutton.y);
@@ -163,13 +157,11 @@ void backend_dispatch_nonblocking (void) {
 			update_modifiers ();
 		}
 	}
-	if (redraw_requested) callbacks.draw ();
-	redraw_requested = -1;
 }
 
-void backend_request_redraw (void) {
-	if (redraw_requested == -1) callbacks.draw ();
-	else redraw_requested = 1;
+void backend_wait_for_events (int wayland_fd) {
+	struct pollfd fds[2] = {{ConnectionNumber(x_display), POLLIN}, {wayland_fd, POLLIN}};
+	poll (fds, 2, -1);
 }
 
 void backend_get_keymap (int *fd, int *size) {
