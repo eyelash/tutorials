@@ -5,8 +5,17 @@
 #include <stdlib.h>
 #include "backend.h"
 #include <GL/gl.h>
-#include "texture.h"
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <stdio.h>
+
+typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC) (GLenum target, EGLImage image);
+
+static PFNEGLBINDWAYLANDDISPLAYWL eglBindWaylandDisplayWL = NULL;
+static PFNEGLQUERYWAYLANDBUFFERWL eglQueryWaylandBufferWL = NULL;
+static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES = NULL;
+
+#include "texture.h"
 
 static struct wl_display *display;
 static int pointer_x, pointer_y;
@@ -99,12 +108,25 @@ static void surface_set_input_region (struct wl_client *client, struct wl_resour
 }
 static void surface_commit (struct wl_client *client, struct wl_resource *resource) {
 	struct surface *surface = wl_resource_get_user_data (resource);
-	struct wl_shm_buffer *shm_buffer = wl_shm_buffer_get (surface->buffer);
-	uint32_t width = wl_shm_buffer_get_width (shm_buffer);
-	uint32_t height = wl_shm_buffer_get_height (shm_buffer);
-	void *data = wl_shm_buffer_get_data (shm_buffer);
-	texture_delete (&surface->texture);
-	texture_create (&surface->texture, width, height, data);
+	EGLint texture_format;
+	if (eglQueryWaylandBufferWL (backend_get_egl_display(), surface->buffer, EGL_TEXTURE_FORMAT, &texture_format)) {
+		EGLint width, height;
+		eglQueryWaylandBufferWL (backend_get_egl_display(), surface->buffer, EGL_WIDTH, &width);
+		eglQueryWaylandBufferWL (backend_get_egl_display(), surface->buffer, EGL_WIDTH, &height);
+		EGLAttrib attribs = EGL_NONE;
+		EGLImage image = eglCreateImage (backend_get_egl_display(), EGL_NO_CONTEXT, EGL_WAYLAND_BUFFER_WL, surface->buffer, &attribs);
+		texture_delete (&surface->texture);
+		texture_create_from_egl_image (&surface->texture, width, height, image);
+		eglDestroyImage (backend_get_egl_display(), image);
+	}
+	else {
+		struct wl_shm_buffer *shm_buffer = wl_shm_buffer_get (surface->buffer);
+		uint32_t width = wl_shm_buffer_get_width (shm_buffer);
+		uint32_t height = wl_shm_buffer_get_height (shm_buffer);
+		void *data = wl_shm_buffer_get_data (shm_buffer);
+		texture_delete (&surface->texture);
+		texture_create (&surface->texture, width, height, data);
+	}
 	wl_buffer_send_release (surface->buffer);
 	redraw_needed = 1;
 }
@@ -320,7 +342,7 @@ static void handle_resize_event (int width, int height) {
 	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glEnable (GL_BLEND);
 }
-static void handle_draw_event () {
+static void handle_draw_event (void) {
 	redraw_needed = 1;
 }
 static void handle_mouse_motion_event (int x, int y) {
@@ -424,6 +446,9 @@ static void main_loop (void) {
 
 int main () {
 	backend_init (&callbacks);
+	eglBindWaylandDisplayWL = (PFNEGLBINDWAYLANDDISPLAYWL) eglGetProcAddress ("eglBindWaylandDisplayWL");
+	eglQueryWaylandBufferWL = (PFNEGLQUERYWAYLANDBUFFERWL) eglGetProcAddress ("eglQueryWaylandBufferWL");
+	glEGLImageTargetTexture2DOES = (PFNGLEGLIMAGETARGETTEXTURE2DOESPROC) eglGetProcAddress ("glEGLImageTargetTexture2DOES");
 	wl_list_init (&clients);
 	wl_list_init (&surfaces);
 	display = wl_display_create ();
@@ -432,6 +457,7 @@ int main () {
 	wl_global_create (display, &wl_shell_interface, 1, NULL, &shell_bind);
 	wl_global_create (display, &xdg_shell_interface, 1, NULL, &xdg_shell_bind);
 	wl_global_create (display, &wl_seat_interface, 1, NULL, &seat_bind);
+	eglBindWaylandDisplayWL (backend_get_egl_display(), display);
 	wl_display_init_shm (display);
 	
 	main_loop ();

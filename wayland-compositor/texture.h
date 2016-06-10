@@ -14,6 +14,17 @@ static void texture_create (struct texture *texture, int width, int height, void
 	glBindTexture (GL_TEXTURE_2D, 0);
 }
 
+static void texture_create_from_egl_image (struct texture *texture, int width, int height, EGLImage image) {
+	texture->width = width;
+	texture->height = height;
+	glGenTextures (1, &texture->identifier);
+	glBindTexture (GL_TEXTURE_2D, texture->identifier);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glEGLImageTargetTexture2DOES (GL_TEXTURE_2D, image);
+	glBindTexture (GL_TEXTURE_2D, 0);
+}
+
 static void texture_draw (struct texture *texture, int x, int y) {
 	if (!texture->identifier) return;
 	
