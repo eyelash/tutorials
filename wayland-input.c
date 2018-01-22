@@ -103,13 +103,13 @@ static struct wl_seat_listener seat_listener = {&seat_capabilities};
 
 static void registry_add_object (void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version) {
 	if (!strcmp(interface,"wl_compositor")) {
-		compositor = wl_registry_bind (registry, name, &wl_compositor_interface, 0);
+		compositor = wl_registry_bind (registry, name, &wl_compositor_interface, 1);
 	}
 	else if (!strcmp(interface,"wl_shell")) {
-		shell = wl_registry_bind (registry, name, &wl_shell_interface, 0);
+		shell = wl_registry_bind (registry, name, &wl_shell_interface, 1);
 	}
 	else if (!strcmp(interface,"wl_seat")) {
-		seat = wl_registry_bind (registry, name, &wl_seat_interface, 0);
+		seat = wl_registry_bind (registry, name, &wl_seat_interface, 1);
 		wl_seat_add_listener (seat, &seat_listener, NULL);
 	}
 }
