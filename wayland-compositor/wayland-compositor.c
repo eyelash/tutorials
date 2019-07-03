@@ -44,6 +44,7 @@ static struct client *get_client (struct wl_client *_client) {
 struct surface {
 	struct wl_resource *surface;
 	struct wl_resource *xdg_surface;
+	struct wl_resource *xdg_toplevel;
 	struct wl_resource *buffer;
 	struct wl_resource *frame_callback;
 	int x, y;
@@ -61,7 +62,7 @@ static void deactivate_surface (struct surface *surface) {
 	if (surface->client->keyboard) wl_keyboard_send_leave (surface->client->keyboard, 0, surface->surface);
 	struct wl_array state_array;
 	wl_array_init (&state_array);
-	xdg_surface_send_configure (surface->xdg_surface, 0, 0, &state_array, 0);
+	xdg_toplevel_send_configure (surface->xdg_toplevel, 0, 0, &state_array);
 }
 static void activate_surface (struct surface *surface) {
 	wl_list_remove (&surface->link);
@@ -73,8 +74,8 @@ static void activate_surface (struct surface *surface) {
 		wl_keyboard_send_modifiers (surface->client->keyboard, 0, modifier_state.depressed, modifier_state.latched, modifier_state.locked, modifier_state.group);
 	}
 	int32_t *states = wl_array_add (&array, sizeof(int32_t));
-	states[0] = XDG_SURFACE_STATE_ACTIVATED;
-	xdg_surface_send_configure (surface->xdg_surface, 0, 0, &array, 0);
+	states[0] = XDG_TOPLEVEL_STATE_ACTIVATED;
+	xdg_toplevel_send_configure (surface->xdg_toplevel, 0, 0, &array);
 }
 static void delete_surface (struct wl_resource *resource) {
 	struct surface *surface = wl_resource_get_user_data (resource);
@@ -108,6 +109,10 @@ static void surface_set_input_region (struct wl_client *client, struct wl_resour
 }
 static void surface_commit (struct wl_client *client, struct wl_resource *resource) {
 	struct surface *surface = wl_resource_get_user_data (resource);
+	if (!surface->buffer) {
+		xdg_surface_send_configure(surface->xdg_surface, 0);
+		return;
+	}
 	EGLint texture_format;
 	if (eglQueryWaylandBufferWL (backend_get_egl_display(), surface->buffer, EGL_TEXTURE_FORMAT, &texture_format)) {
 		EGLint width, height;
@@ -214,78 +219,95 @@ static void shell_bind (struct wl_client *client, void *data, uint32_t version, 
 	wl_resource_set_implementation (resource, &shell_interface, NULL, NULL);
 }
 
-// xdg surface
-static void xdg_surface_destroy (struct wl_client *client, struct wl_resource *resource) {
+// xdg toplevel
+static void xdg_toplevel_destroy (struct wl_client *client, struct wl_resource *resource) {
 	
 }
-static void xdg_surface_set_parent (struct wl_client *client, struct wl_resource *resource, struct wl_resource *parent) {
+static void xdg_toplevel_set_parent (struct wl_client *client, struct wl_resource *resource, struct wl_resource *parent) {
 	
 }
-static void xdg_surface_set_title (struct wl_client *client, struct wl_resource *resource, const char *title) {
+static void xdg_toplevel_set_title (struct wl_client *client, struct wl_resource *resource, const char *title) {
 	
 }
-static void xdg_surface_set_app_id (struct wl_client *client, struct wl_resource *resource, const char *app_id) {
+static void xdg_toplevel_set_app_id (struct wl_client *client, struct wl_resource *resource, const char *app_id) {
 	
 }
-static void xdg_surface_show_window_menu (struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y) {
+static void xdg_toplevel_show_window_menu (struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y) {
 	
 }
-static void xdg_surface_move (struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial) {
+static void xdg_toplevel_move (struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial) {
 	struct surface *surface = wl_resource_get_user_data (resource);
 	// during the move the surface coordinates are relative to the pointer
 	surface->x = surface->x - pointer_x;
 	surface->y = surface->y - pointer_y;
 	moving_surface = surface;
 }
-static void xdg_surface_resize (struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial, uint32_t edges) {
+static void xdg_toplevel_resize (struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial, uint32_t edges) {
 	
 }
-static void xdg_surface_ack_configure (struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
+static void xdg_toplevel_set_max_size (struct wl_client *client, struct wl_resource *resource, int32_t width, int32_t height) {
+	
+}
+static void xdg_toplevel_set_min_size (struct wl_client *client, struct wl_resource *resource, int32_t width, int32_t height) {
+	
+}
+static void xdg_toplevel_set_maximized (struct wl_client *client, struct wl_resource *resource) {
+	printf ("surface requested maximize\n");
+}
+static void xdg_toplevel_unset_maximized (struct wl_client *client, struct wl_resource *resource) {
+	
+}
+static void xdg_toplevel_set_fullscreen (struct wl_client *client, struct wl_resource *resource, struct wl_resource *output) {
+	
+}
+static void xdg_toplevel_unset_fullscreen (struct wl_client *client, struct wl_resource *resource) {
+	
+}
+static void xdg_toplevel_set_minimized (struct wl_client *client, struct wl_resource *resource) {
+	
+}
+static struct xdg_toplevel_interface my_xdg_toplevel_interface = {&xdg_toplevel_destroy, &xdg_toplevel_set_parent, &xdg_toplevel_set_title, &xdg_toplevel_set_app_id, &xdg_toplevel_show_window_menu, &xdg_toplevel_move, &xdg_toplevel_resize, &xdg_toplevel_set_max_size, &xdg_toplevel_set_min_size, &xdg_toplevel_set_maximized, &xdg_toplevel_unset_maximized, &xdg_toplevel_set_fullscreen, &xdg_toplevel_unset_fullscreen, &xdg_toplevel_set_minimized};
+
+// xdg surface
+static void xdg_surface_destroy (struct wl_client *client, struct wl_resource *resource) {
+	
+}
+static void xdg_surface_get_toplevel (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+	struct surface *surface = wl_resource_get_user_data (resource);
+	surface->xdg_toplevel = wl_resource_create (client, &xdg_toplevel_interface, 1, id);
+	wl_resource_set_implementation (surface->xdg_toplevel, &my_xdg_toplevel_interface, surface, NULL);
+}
+static void xdg_surface_get_popup (struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *parent, struct wl_resource *positioner) {
 	
 }
 static void xdg_surface_set_window_geometry (struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y, int32_t width, int32_t height) {
 	
 }
-static void xdg_surface_set_maximized (struct wl_client *client, struct wl_resource *resource) {
-	printf ("surface requested maximize\n");
-}
-static void xdg_surface_unset_maximized (struct wl_client *client, struct wl_resource *resource) {
+static void xdg_surface_ack_configure (struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
 	
 }
-static void xdg_surface_set_fullscreen (struct wl_client *client, struct wl_resource *resource, struct wl_resource *output) {
-	
-}
-static void xdg_surface_unset_fullscreen (struct wl_client *client, struct wl_resource *resource) {
-	
-}
-static void xdg_surface_set_minimized (struct wl_client *client, struct wl_resource *resource) {
-	
-}
-static struct xdg_surface_interface my_xdg_surface_interface = {&xdg_surface_destroy, &xdg_surface_set_parent, &xdg_surface_set_title, &xdg_surface_set_app_id, &xdg_surface_show_window_menu, &xdg_surface_move, &xdg_surface_resize, &xdg_surface_ack_configure, &xdg_surface_set_window_geometry, &xdg_surface_set_maximized, &xdg_surface_unset_maximized, &xdg_surface_set_fullscreen, &xdg_surface_unset_fullscreen, &xdg_surface_set_minimized};
+static struct xdg_surface_interface my_xdg_surface_interface = {&xdg_surface_destroy, &xdg_surface_get_toplevel, &xdg_surface_get_popup, &xdg_surface_set_window_geometry, &xdg_surface_ack_configure};
 
-// xdg shell
-static void xdg_shell_destroy (struct wl_client *client, struct wl_resource *resource) {
+// xdg wm base
+static void xdg_wm_base_destroy (struct wl_client *client, struct wl_resource *resource) {
 	
 }
-static void xdg_shell_use_unstable_version (struct wl_client *client, struct wl_resource *resource, int32_t version) {
+static void xdg_wm_base_create_positioner (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	
 }
-static void xdg_shell_get_xdg_surface (struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *_surface) {
+static void xdg_wm_base_get_xdg_surface (struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *_surface) {
 	struct surface *surface = wl_resource_get_user_data (_surface);
 	surface->xdg_surface = wl_resource_create (client, &xdg_surface_interface, 1, id);
 	wl_resource_set_implementation (surface->xdg_surface, &my_xdg_surface_interface, surface, NULL);
 }
-static void xdg_shell_get_xdg_popup (struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *surface, struct wl_resource *parent, struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y) {
+static void xdg_wm_base_pong (struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
 	
 }
-static void xdg_shell_pong (struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
-	
-}
-static struct xdg_shell_interface my_xdg_shell_interface = {&xdg_shell_destroy, &xdg_shell_use_unstable_version, &xdg_shell_get_xdg_surface, &xdg_shell_get_xdg_popup, &xdg_shell_pong};
-static void xdg_shell_bind (struct wl_client *client, void *data, uint32_t version, uint32_t id) {
-	printf ("bind: xdg_shell\n");
-	struct wl_resource *resource = wl_resource_create (client, &xdg_shell_interface, 1, id);
-	wl_resource_set_implementation (resource, &my_xdg_shell_interface, NULL, NULL);
+static struct xdg_wm_base_interface my_xdg_wm_base_interface = {&xdg_wm_base_destroy, &xdg_wm_base_create_positioner, &xdg_wm_base_get_xdg_surface, &xdg_wm_base_pong};
+static void xdg_wm_base_bind (struct wl_client *client, void *data, uint32_t version, uint32_t id) {
+	printf ("bind: xdg_wm_base\n");
+	struct wl_resource *resource = wl_resource_create (client, &xdg_wm_base_interface, 1, id);
+	wl_resource_set_implementation (resource, &my_xdg_wm_base_interface, NULL, NULL);
 }
 
 // pointer
@@ -455,7 +477,7 @@ int main () {
 	wl_display_add_socket_auto (display);
 	wl_global_create (display, &wl_compositor_interface, 3, NULL, &compositor_bind);
 	wl_global_create (display, &wl_shell_interface, 1, NULL, &shell_bind);
-	wl_global_create (display, &xdg_shell_interface, 1, NULL, &xdg_shell_bind);
+	wl_global_create (display, &xdg_wm_base_interface, 1, NULL, &xdg_wm_base_bind);
 	wl_global_create (display, &wl_seat_interface, 1, NULL, &seat_bind);
 	eglBindWaylandDisplayWL (backend_get_egl_display(), display);
 	wl_display_init_shm (display);
