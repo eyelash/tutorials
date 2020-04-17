@@ -141,7 +141,7 @@ static void surface_set_buffer_transform (struct wl_client *client, struct wl_re
 static void surface_set_buffer_scale (struct wl_client *client, struct wl_resource *resource, int32_t scale) {
 	
 }
-static struct wl_surface_interface surface_interface = {&surface_destroy, &surface_attach, &surface_damage, &surface_frame, &surface_set_opaque_region, &surface_set_input_region, &surface_commit, &surface_set_buffer_transform, &surface_set_buffer_scale};
+static struct wl_surface_interface surface_implementation = {&surface_destroy, &surface_attach, &surface_damage, &surface_frame, &surface_set_opaque_region, &surface_set_input_region, &surface_commit, &surface_set_buffer_transform, &surface_set_buffer_scale};
 
 // region
 static void region_destroy (struct wl_client *client, struct wl_resource *resource) {
@@ -153,25 +153,25 @@ static void region_add (struct wl_client *client, struct wl_resource *resource, 
 static void region_subtract (struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y, int32_t width, int32_t height) {
 	
 }
-static struct wl_region_interface region_interface = {&region_destroy, &region_add, &region_subtract};
+static struct wl_region_interface region_implementation = {&region_destroy, &region_add, &region_subtract};
 
 // compositor
 static void compositor_create_surface (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	struct surface *surface = calloc (1, sizeof(struct surface));
 	surface->surface = wl_resource_create (client, &wl_surface_interface, 3, id);
-	wl_resource_set_implementation (surface->surface, &surface_interface, surface, &delete_surface);
+	wl_resource_set_implementation (surface->surface, &surface_implementation, surface, &delete_surface);
 	surface->client = get_client (client);
 	wl_list_insert (&surfaces, &surface->link);
 }
 static void compositor_create_region (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	struct wl_resource *region = wl_resource_create (client, &wl_region_interface, 1, id);
-	wl_resource_set_implementation (region, &region_interface, NULL, NULL);
+	wl_resource_set_implementation (region, &region_implementation, NULL, NULL);
 }
-static struct wl_compositor_interface compositor_interface = {&compositor_create_surface, &compositor_create_region};
+static struct wl_compositor_interface compositor_implementation = {&compositor_create_surface, &compositor_create_region};
 static void compositor_bind (struct wl_client *client, void *data, uint32_t version, uint32_t id) {
 	printf ("bind: compositor\n");
 	struct wl_resource *resource = wl_resource_create (client, &wl_compositor_interface, 1, id);
-	wl_resource_set_implementation (resource, &compositor_interface, NULL, NULL);
+	wl_resource_set_implementation (resource, &compositor_implementation, NULL, NULL);
 }
 
 // shell surface
@@ -205,18 +205,18 @@ static void shell_surface_set_title (struct wl_client *client, struct wl_resourc
 static void shell_surface_set_class (struct wl_client *client, struct wl_resource *resource, const char *class_) {
 	
 }
-static struct wl_shell_surface_interface shell_surface_interface = {&shell_surface_pong, &shell_surface_move, &shell_surface_resize, &shell_surface_set_toplevel, &shell_surface_set_transient, &shell_surface_set_fullscreen, &shell_surface_set_popup, &shell_surface_set_maximized, &shell_surface_set_title, &shell_surface_set_class};
+static struct wl_shell_surface_interface shell_surface_implementation = {&shell_surface_pong, &shell_surface_move, &shell_surface_resize, &shell_surface_set_toplevel, &shell_surface_set_transient, &shell_surface_set_fullscreen, &shell_surface_set_popup, &shell_surface_set_maximized, &shell_surface_set_title, &shell_surface_set_class};
 
 // wl shell
 static void shell_get_shell_surface (struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *surface) {
 	struct wl_resource *shell_surface = wl_resource_create (client, &wl_shell_surface_interface, 1, id);
-	wl_resource_set_implementation (shell_surface, &shell_surface_interface, NULL, NULL);
+	wl_resource_set_implementation (shell_surface, &shell_surface_implementation, NULL, NULL);
 }
-static struct wl_shell_interface shell_interface = {&shell_get_shell_surface};
+static struct wl_shell_interface shell_implementation = {&shell_get_shell_surface};
 static void shell_bind (struct wl_client *client, void *data, uint32_t version, uint32_t id) {
 	printf ("bind: wl_shell\n");
 	struct wl_resource *resource = wl_resource_create (client, &wl_shell_interface, 1, id);
-	wl_resource_set_implementation (resource, &shell_interface, NULL, NULL);
+	wl_resource_set_implementation (resource, &shell_implementation, NULL, NULL);
 }
 
 // xdg toplevel
@@ -266,7 +266,7 @@ static void xdg_toplevel_unset_fullscreen (struct wl_client *client, struct wl_r
 static void xdg_toplevel_set_minimized (struct wl_client *client, struct wl_resource *resource) {
 	
 }
-static struct xdg_toplevel_interface my_xdg_toplevel_interface = {&xdg_toplevel_destroy, &xdg_toplevel_set_parent, &xdg_toplevel_set_title, &xdg_toplevel_set_app_id, &xdg_toplevel_show_window_menu, &xdg_toplevel_move, &xdg_toplevel_resize, &xdg_toplevel_set_max_size, &xdg_toplevel_set_min_size, &xdg_toplevel_set_maximized, &xdg_toplevel_unset_maximized, &xdg_toplevel_set_fullscreen, &xdg_toplevel_unset_fullscreen, &xdg_toplevel_set_minimized};
+static struct xdg_toplevel_interface xdg_toplevel_implementation = {&xdg_toplevel_destroy, &xdg_toplevel_set_parent, &xdg_toplevel_set_title, &xdg_toplevel_set_app_id, &xdg_toplevel_show_window_menu, &xdg_toplevel_move, &xdg_toplevel_resize, &xdg_toplevel_set_max_size, &xdg_toplevel_set_min_size, &xdg_toplevel_set_maximized, &xdg_toplevel_unset_maximized, &xdg_toplevel_set_fullscreen, &xdg_toplevel_unset_fullscreen, &xdg_toplevel_set_minimized};
 
 // xdg surface
 static void xdg_surface_destroy (struct wl_client *client, struct wl_resource *resource) {
@@ -275,7 +275,7 @@ static void xdg_surface_destroy (struct wl_client *client, struct wl_resource *r
 static void xdg_surface_get_toplevel (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	struct surface *surface = wl_resource_get_user_data (resource);
 	surface->xdg_toplevel = wl_resource_create (client, &xdg_toplevel_interface, 1, id);
-	wl_resource_set_implementation (surface->xdg_toplevel, &my_xdg_toplevel_interface, surface, NULL);
+	wl_resource_set_implementation (surface->xdg_toplevel, &xdg_toplevel_implementation, surface, NULL);
 }
 static void xdg_surface_get_popup (struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *parent, struct wl_resource *positioner) {
 	
@@ -286,7 +286,7 @@ static void xdg_surface_set_window_geometry (struct wl_client *client, struct wl
 static void xdg_surface_ack_configure (struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
 	
 }
-static struct xdg_surface_interface my_xdg_surface_interface = {&xdg_surface_destroy, &xdg_surface_get_toplevel, &xdg_surface_get_popup, &xdg_surface_set_window_geometry, &xdg_surface_ack_configure};
+static struct xdg_surface_interface xdg_surface_implementation = {&xdg_surface_destroy, &xdg_surface_get_toplevel, &xdg_surface_get_popup, &xdg_surface_set_window_geometry, &xdg_surface_ack_configure};
 
 // xdg wm base
 static void xdg_wm_base_destroy (struct wl_client *client, struct wl_resource *resource) {
@@ -298,16 +298,16 @@ static void xdg_wm_base_create_positioner (struct wl_client *client, struct wl_r
 static void xdg_wm_base_get_xdg_surface (struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *_surface) {
 	struct surface *surface = wl_resource_get_user_data (_surface);
 	surface->xdg_surface = wl_resource_create (client, &xdg_surface_interface, 1, id);
-	wl_resource_set_implementation (surface->xdg_surface, &my_xdg_surface_interface, surface, NULL);
+	wl_resource_set_implementation (surface->xdg_surface, &xdg_surface_implementation, surface, NULL);
 }
 static void xdg_wm_base_pong (struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
 	
 }
-static struct xdg_wm_base_interface my_xdg_wm_base_interface = {&xdg_wm_base_destroy, &xdg_wm_base_create_positioner, &xdg_wm_base_get_xdg_surface, &xdg_wm_base_pong};
+static struct xdg_wm_base_interface xdg_wm_base_implementation = {&xdg_wm_base_destroy, &xdg_wm_base_create_positioner, &xdg_wm_base_get_xdg_surface, &xdg_wm_base_pong};
 static void xdg_wm_base_bind (struct wl_client *client, void *data, uint32_t version, uint32_t id) {
 	printf ("bind: xdg_wm_base\n");
 	struct wl_resource *resource = wl_resource_create (client, &xdg_wm_base_interface, 1, id);
-	wl_resource_set_implementation (resource, &my_xdg_wm_base_interface, NULL, NULL);
+	wl_resource_set_implementation (resource, &xdg_wm_base_implementation, NULL, NULL);
 }
 
 // pointer
@@ -319,23 +319,23 @@ int32_t hotspot_y) {
 static void pointer_release (struct wl_client *client, struct wl_resource *resource) {
 	
 }
-static struct wl_pointer_interface pointer_interface = {&pointer_set_cursor, &pointer_release};
+static struct wl_pointer_interface pointer_implementation = {&pointer_set_cursor, &pointer_release};
 
 // keyboard
 static void keyboard_release (struct wl_client *client, struct wl_resource *resource) {
 	
 }
-static struct wl_keyboard_interface keyboard_interface = {&keyboard_release};
+static struct wl_keyboard_interface keyboard_implementation = {&keyboard_release};
 
 // seat
 static void seat_get_pointer (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	struct wl_resource *pointer = wl_resource_create (client, &wl_pointer_interface, 1, id);
-	wl_resource_set_implementation (pointer, &pointer_interface, NULL, NULL);
+	wl_resource_set_implementation (pointer, &pointer_implementation, NULL, NULL);
 	get_client(client)->pointer = pointer;
 }
 static void seat_get_keyboard (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	struct wl_resource *keyboard = wl_resource_create (client, &wl_keyboard_interface, 1, id);
-	wl_resource_set_implementation (keyboard, &keyboard_interface, NULL, NULL);
+	wl_resource_set_implementation (keyboard, &keyboard_implementation, NULL, NULL);
 	get_client(client)->keyboard = keyboard;
 	int fd, size;
 	backend_get_keymap (&fd, &size);
@@ -345,11 +345,11 @@ static void seat_get_keyboard (struct wl_client *client, struct wl_resource *res
 static void seat_get_touch (struct wl_client *client, struct wl_resource *resource, uint32_t id) {
 	
 }
-static struct wl_seat_interface seat_interface = {&seat_get_pointer, &seat_get_keyboard, &seat_get_touch};
+static struct wl_seat_interface seat_implementation = {&seat_get_pointer, &seat_get_keyboard, &seat_get_touch};
 static void seat_bind (struct wl_client *client, void *data, uint32_t version, uint32_t id) {
 	printf ("bind: seat\n");
 	struct wl_resource *seat = wl_resource_create (client, &wl_seat_interface, 1, id);
-	wl_resource_set_implementation (seat, &seat_interface, NULL, NULL);
+	wl_resource_set_implementation (seat, &seat_implementation, NULL, NULL);
 	wl_seat_send_capabilities (seat, WL_SEAT_CAPABILITY_POINTER|WL_SEAT_CAPABILITY_KEYBOARD);
 }
 
