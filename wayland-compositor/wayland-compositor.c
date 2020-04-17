@@ -7,9 +7,8 @@
 #include <GL/gl.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include <EGL/eglmesaext.h>
 #include <stdio.h>
-
-typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC) (GLenum target, EGLImage image);
 
 static PFNEGLBINDWAYLANDDISPLAYWL eglBindWaylandDisplayWL = NULL;
 static PFNEGLQUERYWAYLANDBUFFERWL eglQueryWaylandBufferWL = NULL;
